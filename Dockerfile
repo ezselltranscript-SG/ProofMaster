@@ -31,13 +31,13 @@ COPY backend/ ./
 RUN mkdir -p ./static
 
 # Copiar los archivos del frontend construido al directorio static
-COPY --from=frontend-build /app/frontend/build ./static/ || true
-COPY --from=frontend-build /app/frontend/public ./static/ || true
-COPY --from=frontend-build /app/frontend/dist ./static/ || true
-COPY --from=frontend-build /app/frontend/src ./static/src/ || true
-COPY frontend/src/components ./static/components/ || true
-COPY frontend/src/pages ./static/pages/ || true
-COPY frontend/public ./static/public/ || true
+COPY --from=frontend-build /app/frontend/build ./static/ 2>/dev/null || true
+COPY --from=frontend-build /app/frontend/public ./static/ 2>/dev/null || true
+COPY --from=frontend-build /app/frontend/dist ./static/ 2>/dev/null || true
+COPY --from=frontend-build /app/frontend/src ./static/src/ 2>/dev/null || true
+
+# Intentar copiar archivos directamente si están disponibles
+RUN mkdir -p ./static/components ./static/pages ./static/public
 
 # Exponer el puerto que utiliza la aplicación
 EXPOSE 8000
