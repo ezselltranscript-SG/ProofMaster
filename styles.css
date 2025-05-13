@@ -1,0 +1,133 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    font-family: "Segoe UI", sans-serif;
+  }
+  
+  body {
+    background: #f9fbfc;
+    color: #333;
+  }
+  
+  header {
+    display: flex;
+    justify-content: space-between;
+    padding: 1.5rem 3rem;
+    background: white;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+    align-items: center;
+  }
+  
+  .logo {
+    font-size: 1.3rem;
+    font-weight: bold;
+    color: #2c3e50;
+  }
+  
+  .logo span {
+    margin-left: 0.3rem;
+  }
+  
+  nav {
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+  }
+  
+  nav a {
+    text-decoration: none;
+    color: #555;
+  }
+  
+  .btn-primary {
+    background-color: #2979ff;
+    color: white;
+    border: none;
+    padding: 0.5rem 1rem;
+    border-radius: 5px;
+    cursor: pointer;
+  }
+  
+  main {
+    padding: 2rem 3rem;
+  }
+  
+  .editor-section {
+    display: flex;
+    gap: 2rem;
+    margin-top: 1.5rem;
+  }
+  
+  .editor, .analysis {
+    background: white;
+    border-radius: 10px;
+    padding: 1.5rem;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+  }
+  
+  .editor {
+    flex: 2;
+  }
+  
+  .analysis {
+    flex: 1;
+  }
+  
+  .editor-header {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 1rem;
+    color: #666;
+  }
+  
+  textarea {
+    width: 100%;
+    height: 300px;
+    padding: 1rem;
+    font-size: 1rem;
+    border-radius: 8px;
+    border: 1px solid #ccc;
+    resize: none;
+  }
+  
+  .stats, .issues, .suggestions {
+    margin-bottom: 1.5rem;
+  }
+  
+  .issues p, .stats p {
+    margin: 0.3rem 0;
+  }
+  
+  .suggestion-box {
+    background: #fff9c4;
+    border-left: 5px solid #fbc02d;
+    padding: 0.8rem;
+    border-radius: 5px;
+    position: relative;
+    margin-bottom: 1rem;
+  }
+  
+  .suggestion-box .check {
+    position: absolute;
+    top: 8px;
+    right: 10px;
+    color: green;
+    font-weight: bold;
+  }
+  
+  footer {
+    display: flex;
+    justify-content: space-between;
+    padding: 1rem 3rem;
+    background: #eef2f5;
+    margin-top: 2rem;
+    font-size: 0.9rem;
+  }
+  
+  footer a {
+    margin-left: 1rem;
+    text-decoration: none;
+    color: #444;
+  }
+  
