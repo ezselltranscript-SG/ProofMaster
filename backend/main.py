@@ -2,6 +2,7 @@ import os
 import re
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel
 from typing import List
 from supabase import create_client, Client
@@ -33,33 +34,6 @@ load_dotenv()
 # Configura tus claves
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
-
-if not SUPABASE_URL or not SUPABASE_KEY:
-    raise EnvironmentError("Faltan SUPABASE_URL o SUPABASE_KEY en .env")
-
-# Conectar con Supabase
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-
-# Crear instancia de FastAPI
-app = FastAPI(title="ProofMaster API", description="API para corrección ortográfica", version="1.0.0")
-
-# Configurar CORS manualmente
-@app.middleware("http")
-async def add_cors_headers(request, call_next):
-    response = await call_next(request)
-    response.headers["Access-Control-Allow-Origin"] = "*"
-    response.headers["Access-Control-Allow-Credentials"] = "true"
-    response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
-    response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
-    
-    return response
-
-# Manejar solicitudes OPTIONS para CORS preflight
-@app.options("/{path:path}")
-async def options_route(path: str):
-    return {"detail": "OK"}
-
-# Modelos
 class SpellCheckRequest(BaseModel):
     text: str
 
@@ -73,7 +47,77 @@ class SpellCheckResponse(BaseModel):
     corrected_text: str
     full_corrected_code: str  # Campo añadido para devolver el código corregido
 
+# Inicializar FastAPI
+app = FastAPI(
+    title="ProofMaster API",
+    description="API para la aplicación de corrección ortográfica ProofMaster",
+    version="1.0.0"
+)
 
+# Configurar CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Permitir todos los orígenes en desarrollo
+    allow_credentials=True,
+    allow_methods=["*"],  # Permitir todos los métodos
+    allow_headers=["*"],  # Permitir todos los headers
+)
+
+# Ruta raíz para mostrar una página de bienvenida
+@app.get("/", response_class=HTMLResponse)
+def read_root():
+    html_content = """
+    <!DOCTYPE html>
+    <html>
+        <head>
+            <title>ProofMaster API</title>
+            <style>
+                body {
+                    font-family: Arial, sans-serif;
+                    max-width: 800px;
+                    margin: 0 auto;
+                    padding: 20px;
+                    line-height: 1.6;
+                }
+                h1 {
+                    color: #2979ff;
+                }
+                .endpoint {
+                    background-color: #f5f5f5;
+                    padding: 10px;
+                    border-radius: 5px;
+                    margin-bottom: 10px;
+                }
+                a {
+                    color: #2979ff;
+                    text-decoration: none;
+                }
+                a:hover {
+                    text-decoration: underline;
+                }
+            </style>
+        </head>
+        <body>
+            <h1>ProofMaster API</h1>
+            <p>Bienvenido a la API de ProofMaster, una aplicación de corrección ortográfica.</p>
+            
+            <h2>Endpoints disponibles:</h2>
+            <div class="endpoint">
+                <strong>POST /spellcheck</strong>: Analiza un texto y devuelve sugerencias de corrección.
+            </div>
+            
+            <p>Para ver la documentación completa de la API, visita <a href="/docs">/docs</a>.</p>
+            
+            <p>Para acceder a la interfaz de usuario de ProofMaster, necesitas desplegar el frontend por separado.</p>
+        </body>
+    </html>
+    """
+    return html_content
+
+# Redireccionar a la documentación
+@app.get("/api")
+def redirect_to_docs():
+    return RedirectResponse(url="/docs")
 
 # Endpoint principal
 @app.post("/spellcheck", response_model=SpellCheckResponse)
