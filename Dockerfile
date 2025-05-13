@@ -32,8 +32,8 @@ RUN mkdir -p ./static
 
 # Intentar copiar archivos del frontend desde la etapa de construcción
 RUN mkdir -p /app/static
-COPY --from=frontend-builder /app/frontend/build/. /app/static/ || true
-COPY --from=frontend-builder /app/frontend/dist/. /app/static/ || true
+COPY --from=frontend-builder /app/frontend/build/. /app/static/ || echo "No build directory found"
+COPY --from=frontend-builder /app/frontend/. /app/static/ || echo "No frontend files found"
 
 # Crear un archivo index.html básico si no existe
 RUN if [ ! -f ./static/index.html ]; then \
