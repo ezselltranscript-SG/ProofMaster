@@ -9,11 +9,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copiar el resto de los archivos del backend
 COPY backend/ ./
-COPY main.py ./
 
-# Copiar archivos estáticos del frontend (si existen)
-COPY frontend/build/ ./static/
-COPY frontend/public/ ./static/
+# Crear directorio para archivos estáticos
+RUN mkdir -p ./static
 
 # Exponer el puerto que utiliza la aplicación
 EXPOSE 8000
