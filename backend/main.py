@@ -146,13 +146,74 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 # Ruta raíz para servir el frontend o una página de bienvenida
 @app.get("/", response_class=HTMLResponse)
 async def read_root():
-    # Intentar servir el archivo index.html del frontend si existe
+    # Servir el archivo index.html del frontend
     index_path = pathlib.Path("static/index.html")
     if index_path.exists():
         return FileResponse(index_path)
     
-    # Si no existe, mostrar una página de bienvenida
-    return RedirectResponse(url="/static/index.html")
+    # Si no existe, mostrar una página de bienvenida HTML
+    html_content = """
+    <!DOCTYPE html>
+    <html>
+        <head>
+            <title>ProofMaster</title>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <style>
+                body {
+                    font-family: Arial, sans-serif;
+                    max-width: 800px;
+                    margin: 0 auto;
+                    padding: 20px;
+                    line-height: 1.6;
+                }
+                h1 {
+                    color: #2979ff;
+                }
+                .card {
+                    background-color: #f5f5f5;
+                    padding: 20px;
+                    border-radius: 5px;
+                    margin-bottom: 20px;
+                    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                }
+                .btn {
+                    background-color: #2979ff;
+                    color: white;
+                    border: none;
+                    padding: 10px 15px;
+                    border-radius: 5px;
+                    cursor: pointer;
+                    text-decoration: none;
+                    display: inline-block;
+                    margin-top: 10px;
+                }
+                .btn:hover {
+                    background-color: #1c54b2;
+                }
+            </style>
+        </head>
+        <body>
+            <h1>ProofMaster API</h1>
+            <div class="card">
+                <h2>Bienvenido a la API de ProofMaster para corrección ortográfica.</h2>
+                <p>Esta es la API del backend. La aplicación frontend no se ha encontrado.</p>
+                <a href="/docs" class="btn">Ver Documentación</a>
+            </div>
+            <div class="card">
+                <h2>Endpoints disponibles:</h2>
+                <p><strong>GET /</strong> - Esta página de bienvenida</p>
+                <p><strong>GET /api</strong> - Documentación de la API</p>
+                <p><strong>POST /spellcheck</strong> - Endpoint para revisar ortografía</p>
+                <p>Ejemplo de uso:</p>
+                <pre>curl -X POST "https://proofmaster.onrender.com/spellcheck" \
+-H "Content-Type: application/json" \
+-d '{"text": "Este es un texto con herrores ortograficos"}'</pre>
+            </div>
+        </body>
+    </html>
+    """
+    return HTMLResponse(content=html_content)
 
 # Redireccionar a la documentación
 @app.get("/api")
