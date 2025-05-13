@@ -1,24 +1,19 @@
-FROM node:16-alpine as frontend-build
-
-WORKDIR /app/frontend
-COPY frontend/package*.json ./
-RUN npm install
-COPY frontend/ ./
-RUN npm run build
-
+# Usar una imagen de Python para la aplicación
 FROM python:3.9-slim
 
 WORKDIR /app
 
 # Copiar los archivos de requisitos primero para aprovechar la caché de Docker
-COPY backend/requirements.txt .
+COPY backend/requirements.txt ./requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copiar el resto de los archivos del backend
-COPY backend/ .
+COPY backend/ ./
+COPY main.py ./
 
-# Copiar los archivos construidos del frontend
-COPY --from=frontend-build /app/frontend/build /app/static
+# Copiar archivos estáticos del frontend (si existen)
+COPY frontend/build/ ./static/
+COPY frontend/public/ ./static/
 
 # Exponer el puerto que utiliza la aplicación
 EXPOSE 8000
