@@ -31,8 +31,8 @@ COPY backend/ ./
 RUN mkdir -p ./static
 
 # Copiar archivos del frontend desde la etapa de construcción
-COPY --from=frontend-builder /app/frontend/build ./static/ 2>/dev/null || true
-COPY --from=frontend-builder /app/frontend/dist ./static/ 2>/dev/null || true
+COPY --from=frontend-builder /app/frontend/build ./static/ || true
+COPY --from=frontend-builder /app/frontend/dist ./static/ || true
 
 # Crear un archivo index.html básico si no existe
 RUN if [ ! -f ./static/index.html ]; then \
