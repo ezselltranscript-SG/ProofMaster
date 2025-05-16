@@ -328,6 +328,12 @@ def spellcheck(request: SpellCheckRequest):
         # Convertir a minúsculas para las comparaciones
         word_lower = word.lower()
             
+        # Verificar si la palabra está exactamente en la lista de towns (no necesita corrección)
+        if word in town_names:
+            corrected_words.append(word)
+            full_corrected_code.append(word + " (town/city, exact match)")
+            continue
+            
         # Verificar correcciones personalizadas de Supabase (prioridad máxima)
         if word_lower in custom_replacements:
             suggestion_text = custom_replacements[word_lower]
@@ -372,13 +378,17 @@ def spellcheck(request: SpellCheckRequest):
             full_corrected_code.append(f"{original_word} -> {suggestion_text}")
             continue
             
-        # Verificar si puede ser un nombre de pueblo/ciudad
+        # Verificar si puede ser un nombre de pueblo/ciudad (solo si no es una coincidencia exacta)
         if len(word) >= 3 and word[0].isupper():  # Los nombres de lugares suelen empezar con mayúscula
             best_town_match = None
             best_town_score = 0
             
             # Buscar entre los nombres de pueblos/ciudades
             for town in town_names:
+                # Evitar comparar con la misma palabra (ya manejado arriba)
+                if word == town:
+                    continue
+                    
                 # Usar la función get_similarity mejorada
                 score = get_similarity(word, town) * 100  # Convertir a escala 0-100
                 
