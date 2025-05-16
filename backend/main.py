@@ -2,6 +2,7 @@ import os
 import re
 import nltk
 from fuzzywuzzy import fuzz
+from fuzzywuzzy import process
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse
