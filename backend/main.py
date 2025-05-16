@@ -349,35 +349,13 @@ def spellcheck(request: SpellCheckRequest):
             full_corrected_code.append(f"{original_word} -> {suggestion_text} (custom)")
             continue
             
-        # Verificar si la palabra está en el diccionario (correcta)
-        if word_lower in ENGLISH_WORDS and len(word) > 1:
-            corrected_words.append(word)
-            full_corrected_code.append(word)
-            continue
+        # Mantener la palabra original si no se encuentra en las tablas de Supabase
+        # No usamos el diccionario general ni correcciones gramaticales
         
         # No corregir palabras de jerga o abreviaturas comunes
         if word_lower in slang_words:
             corrected_words.append(word)
             full_corrected_code.append(word)
-            continue
-        
-        # Verificar si es un error común conocido
-        if word_lower in common_errors:
-            suggestion_text = common_errors[word_lower]
-            
-            # Preservar capitalización original
-            if word.istitle() and not suggestion_text.startswith("I"):
-                suggestion_text = suggestion_text.title()
-            elif word.isupper():
-                suggestion_text = suggestion_text.upper()
-                
-            corrected_words.append(suggestion_text)
-            suggestions.append({
-                "original": original_word,
-                "suggestion": suggestion_text,
-                "similarity": 0.95  # Alta confianza para errores comunes conocidos
-            })
-            full_corrected_code.append(f"{original_word} -> {suggestion_text}")
             continue
             
         # Verificar si puede ser un nombre de pueblo/ciudad usando FuzzyWuzzy
