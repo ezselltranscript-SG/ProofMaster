@@ -1,16 +1,37 @@
 import os
 import re
+import nltk
+from fuzzywuzzy import fuzz
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
-from typing import List
+from typing import List, Dict, Set
 from supabase import create_client, Client
 from dotenv import load_dotenv
 import pathlib
+import logging
 
-# Función simple de similitud para reemplazar Levenshtein
+# Configurar logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Descargar recursos de NLTK si no están disponibles
+try:
+    nltk.data.find('corpora/words')
+except LookupError:
+    logger.info("Descargando recursos de NLTK...")
+    nltk.download('words')
+
+# Cargar diccionario de palabras en inglés
+try:
+    from nltk.corpus import words
+    ENGLISH_WORDS = set(words.words())
+    logger.info(f"Diccionario de inglés cargado con {len(ENGLISH_WORDS)} palabras")
+except Exception as e:
+    logger.error(f"Error al cargar el diccionario de inglés: {str(e)}")
+    ENGLISH_WORDS = set()
 def similarity_ratio(s1, s2):
     """Calcula una ratio de similitud simple entre dos cadenas."""
     s1, s2 = s1.lower(), s2.lower()
@@ -29,6 +50,29 @@ def similarity_ratio(s1, s2):
     
     # Devolver ratio de similitud
     return 2 * common / total if total > 0 else 0.0
+
+# Función mejorada de similitud usando FuzzyWuzzy
+def get_similarity(s1, s2):
+    """Calcula una ratio de similitud entre dos cadenas usando FuzzyWuzzy."""
+    # Convertir a minúsculas para comparación insensible a mayúsculas/minúsculas
+    s1, s2 = s1.lower(), s2.lower()
+    
+    # Si las cadenas son iguales, la similitud es 1.0
+    if s1 == s2:
+        return 1.0
+    
+    # Calcular diferentes tipos de ratios
+    simple_ratio = fuzz.ratio(s1, s2) / 100.0
+    partial_ratio = fuzz.partial_ratio(s1, s2) / 100.0
+    token_sort_ratio = fuzz.token_sort_ratio(s1, s2) / 100.0
+    token_set_ratio = fuzz.token_set_ratio(s1, s2) / 100.0
+    
+    # Para palabras cortas, dar más peso al ratio simple
+    if len(s1) <= 4 or len(s2) <= 4:
+        return max(simple_ratio * 1.1, partial_ratio, token_sort_ratio, token_set_ratio)
+    
+    # Para palabras más largas, usar el máximo de todos los ratios
+    return max(simple_ratio, partial_ratio, token_sort_ratio, token_set_ratio)
 
 # Cargar variables desde .env
 load_dotenv()
@@ -51,6 +95,7 @@ class SpellCheckResponse(BaseModel):
     suggestions: List[Suggestion]
     corrected_text: str
     full_corrected_code: str  # Campo añadido para devolver el código corregido
+    town_matches: List[Suggestion] = []  # Campo para sugerencias de pueblos/ciudades
 
 # Inicializar FastAPI
 app = FastAPI(
@@ -227,44 +272,206 @@ def spellcheck(request: SpellCheckRequest):
     suggestions = []
 
     try:
-        # Conectar y obtener datos de la tabla spellcheck
+        # Conectar y obtener datos de la tabla spellcheck (correcciones personalizadas)
         response = supabase.table("spellcheck").select("original, suggestion").execute()
-        replacements = response.data
+        custom_replacements = {item["original"].lower(): item["suggestion"] for item in response.data}
+        logger.info(f"Cargadas {len(custom_replacements)} correcciones personalizadas de Supabase")
+        
+        # Cargar nombres de pueblos/ciudades desde la tabla towns
+        towns_response = supabase.table("towns").select("name").execute()
+        town_names = [item["name"] for item in towns_response.data]
+        logger.info(f"Cargados {len(town_names)} nombres de pueblos/ciudades desde Supabase")
     except Exception as e:
+        logger.error(f"Error al conectar con Supabase: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error al conectar con Supabase: {str(e)}")
+    
+    # Lista de palabras de jerga o abreviaturas que no deben corregirse
+    slang_words = ["btw", "asap", "lol", "omg", "idk", "gonna", "wanna", "gotta"]
+    
+    # Diccionario de correcciones comunes para errores frecuentes
+    # Solo lo usaremos como respaldo si FuzzyWuzzy no encuentra una buena corrección
+    common_errors = {
+        "wasnt": "wasn't",
+        "becuase": "because",
+        "alot": "a lot",
+        "problm": "problem",
+        "im": "I'm",
+        "speling": "spelling",
+        "grammer": "grammar",
+        "amazng": "amazing",
+        "definately": "definitely",
+        "idntify": "identify",
+        "misstakes": "mistakes",
+        "projct": "project",
+        "documntation": "documentation",
+        "erors": "errors",
+        "versiun": "version",
+        "thnak": "thank",
+        "usefull": "useful",
+    }
 
-    words = re.findall(r"\b\w+\b|[^\s\w]", text)  # Incluye signos de puntuación
+    # Extraer palabras y signos de puntuación del texto
+    words = re.findall(r"\b[A-Za-z]+(?:'[A-Za-z]+)?\b|[^\s\w]", text)
+    logger.info(f"Texto a analizar tiene {len(words)} palabras/tokens")
     corrected_words = []
     full_corrected_code = []  # Lista para almacenar las palabras corregidas y el código
 
     for word in words:
-        found_match = False
-        for item in replacements:
-            original = item["original"]
-            suggestion_text = item["suggestion"]
-            similarity = similarity_ratio(word, original)
-
-            # Si la similitud es 1.0 o si es mayor a 0.8 y la palabra coincide, sugerir la corrección
-            if similarity == 1.0 or (similarity > 0.8 and word.lower() == original.lower()):
-                corrected_words.append(suggestion_text)
-                suggestions.append({
-                    "original": word,
-                    "suggestion": suggestion_text,
-                    "similarity": round(similarity, 2)
-                })
-                full_corrected_code.append(f"{original} -> {suggestion_text}")
-                found_match = True
-                break
-
-        if not found_match:
+        original_word = word  # Guardar la palabra original para mostrarla en las sugerencias
+        
+        # Si no es una palabra alfabética (signos de puntuación, números, etc.)
+        if not word.isalpha():
             corrected_words.append(word)
             full_corrected_code.append(word)
+            continue
+        
+        # Convertir a minúsculas para las comparaciones
+        word_lower = word.lower()
+            
+        # Verificar correcciones personalizadas de Supabase (prioridad máxima)
+        if word_lower in custom_replacements:
+            suggestion_text = custom_replacements[word_lower]
+            
+            corrected_words.append(suggestion_text)
+            suggestions.append({
+                "original": original_word,
+                "suggestion": suggestion_text,
+                "similarity": 1.0
+            })
+            full_corrected_code.append(f"{original_word} -> {suggestion_text} (custom)")
+            continue
+            
+        # Verificar si la palabra está en el diccionario (correcta)
+        if word_lower in ENGLISH_WORDS and len(word) > 1:
+            corrected_words.append(word)
+            full_corrected_code.append(word)
+            continue
+        
+        # No corregir palabras de jerga o abreviaturas comunes
+        if word_lower in slang_words:
+            corrected_words.append(word)
+            full_corrected_code.append(word)
+            continue
+        
+        # Verificar si es un error común conocido
+        if word_lower in common_errors:
+            suggestion_text = common_errors[word_lower]
+            
+            # Preservar capitalización original
+            if word.istitle() and not suggestion_text.startswith("I"):
+                suggestion_text = suggestion_text.title()
+            elif word.isupper():
+                suggestion_text = suggestion_text.upper()
+                
+            corrected_words.append(suggestion_text)
+            suggestions.append({
+                "original": original_word,
+                "suggestion": suggestion_text,
+                "similarity": 0.95  # Alta confianza para errores comunes conocidos
+            })
+            full_corrected_code.append(f"{original_word} -> {suggestion_text}")
+            continue
+            
+        # Verificar si puede ser un nombre de pueblo/ciudad
+        if len(word) >= 3 and word[0].isupper():  # Los nombres de lugares suelen empezar con mayúscula
+            best_town_match = None
+            best_town_score = 0
+            
+            # Buscar entre los nombres de pueblos/ciudades
+            for town in town_names:
+                # Usar la función get_similarity mejorada
+                score = get_similarity(word, town) * 100  # Convertir a escala 0-100
+                
+                # Usar un umbral más bajo para nombres de lugares (pueden ser menos comunes)
+                if score > 75 and score > best_town_score:
+                    best_town_score = score
+                    best_town_match = town
+            
+            # Si encontramos una buena coincidencia con un nombre de pueblo/ciudad
+            if best_town_match:
+                similarity = round(best_town_score / 100.0, 2)
+                corrected_words.append(best_town_match)
+                suggestions.append({
+                    "original": original_word,
+                    "suggestion": best_town_match,
+                    "similarity": similarity
+                })
+                full_corrected_code.append(f"{original_word} -> {best_town_match} (town/city, {similarity})")
+                continue
+            
+        # Usar FuzzyWuzzy para palabras que no son muy cortas
+        if len(word) >= 3:
+            # Usar FuzzyWuzzy para encontrar la mejor corrección
+            best_match = None
+            best_score = 0
+            
+            # Ampliar la búsqueda para incluir más candidatos potenciales
+            first_letter = word[0].lower()
+            potential_matches = []
+            
+            # Incluir palabras que empiezan con la misma letra
+            for w in ENGLISH_WORDS:
+                if w[0].lower() == first_letter and abs(len(w) - len(word)) <= 3:
+                    potential_matches.append(w)
+                # Para palabras cortas, ser más flexible
+                elif len(word) <= 4 and abs(len(w) - len(word)) <= 1:
+                    potential_matches.append(w)
+            
+            # Limitar a 300 candidatos para mejorar la cobertura sin sacrificar rendimiento
+            potential_matches = potential_matches[:300]
+            
+            for dict_word in potential_matches:
+                # Usar la función get_similarity mejorada
+                score = get_similarity(word_lower, dict_word.lower()) * 100  # Convertir a escala 0-100
+                
+                # Umbral adaptativo basado en la longitud de la palabra
+                threshold = 80 if len(word) <= 4 else 85
+                
+                if score > threshold and score > best_score:
+                    best_score = score
+                    best_match = dict_word
+            
+            # Si encontramos una buena corrección con similitud > 85%
+            similarity = round(best_score / 100.0, 2)
+            if best_match and best_match.lower() != word_lower and similarity >= 0.85:
+                # Preservar capitalización original
+                if word.istitle():
+                    best_match = best_match.title()
+                elif word.isupper():
+                    best_match = best_match.upper()
+                    
+                corrected_words.append(best_match)
+                suggestions.append({
+                    "original": original_word,
+                    "suggestion": best_match,
+                    "similarity": similarity
+                })
+                full_corrected_code.append(f"{original_word} -> {best_match}")
+                continue
+            # Si encontramos una sugerencia pero con similitud < 85%, solo sugerirla pero no aplicarla
+            elif best_match and best_match.lower() != word_lower:
+                suggestions.append({
+                    "original": original_word,
+                    "suggestion": best_match,
+                    "similarity": similarity
+                })
+                corrected_words.append(word)  # Mantener la palabra original
+                full_corrected_code.append(f"{original_word} -> {best_match} (no aplicado, similitud {similarity})")
+                continue
+        
+        # Si llegamos aquí, mantener la palabra original
+        corrected_words.append(word)
+        full_corrected_code.append(word)
 
     corrected_text = " ".join(corrected_words)
     full_corrected_code = "\n".join(full_corrected_code)  # Formato de código corregido con las sugerencias
 
+    # Filtrar sugerencias de pueblos/ciudades para la respuesta
+    town_matches = [s for s in suggestions if "town/city" in full_corrected_code.split("\n")[suggestions.index(s)]]
+    
     return {
         "suggestions": suggestions,
         "corrected_text": corrected_text,
-        "full_corrected_code": full_corrected_code
+        "full_corrected_code": full_corrected_code,
+        "town_matches": town_matches
     }
