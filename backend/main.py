@@ -90,6 +90,7 @@ class Suggestion(BaseModel):
     original: str
     suggestion: str
     similarity: float
+    correction_type: str = "normal"  # Puede ser "normal" o "town"
 
 class SpellCheckResponse(BaseModel):
     suggestions: List[Suggestion]
@@ -404,7 +405,8 @@ def spellcheck(request: SpellCheckRequest):
                 suggestions.append({
                     "original": original_word,
                     "suggestion": best_town_match,
-                    "similarity": similarity
+                    "similarity": similarity,
+                    "correction_type": "town"
                 })
                 full_corrected_code.append(f"{original_word} -> {best_town_match} (town/city, {similarity})")
                 continue
