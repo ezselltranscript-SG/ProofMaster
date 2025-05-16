@@ -379,97 +379,86 @@ def spellcheck(request: SpellCheckRequest):
             full_corrected_code.append(f"{original_word} -> {suggestion_text}")
             continue
             
-        # Verificar si puede ser un nombre de pueblo/ciudad (solo si no es una coincidencia exacta)
-        if len(word) >= 3 and word[0].isupper():  # Los nombres de lugares suelen empezar con mayúscula
-            best_town_match = None
-            best_town_score = 0
-            
-            # Buscar entre los nombres de pueblos/ciudades
-            for town in town_names:
-                # Evitar comparar con la misma palabra (ya manejado arriba)
-                if word == town:
-                    continue
-                    
-                # Usar la función get_similarity mejorada
-                score = get_similarity(word, town) * 100  # Convertir a escala 0-100
-                
-                # Usar un umbral más bajo para nombres de lugares (pueden ser menos comunes)
-                if score > 75 and score > best_town_score:
-                    best_town_score = score
-                    best_town_match = town
-            
-            # Si encontramos una buena coincidencia con un nombre de pueblo/ciudad
-            if best_town_match:
-                similarity = round(best_town_score / 100.0, 2)
-                corrected_words.append(best_town_match)
-                suggestions.append({
-                    "original": original_word,
-                    "suggestion": best_town_match,
-                    "similarity": similarity,
-                    "correction_type": "town"
-                })
-                full_corrected_code.append(f"{original_word} -> {best_town_match} (town/city, {similarity})")
-                continue
-            
-        # Usar FuzzyWuzzy para palabras que no son muy cortas
+        # Verificar si puede ser un nombre de pueblo/ciudad usando FuzzyWuzzy
         if len(word) >= 3:
-            # Usar FuzzyWuzzy para encontrar la mejor corrección
-            best_match = None
-            best_score = 0
-            
-            # Ampliar la búsqueda para incluir más candidatos potenciales
-            first_letter = word[0].lower()
-            potential_matches = []
-            
-            # Incluir palabras que empiezan con la misma letra
-            for w in ENGLISH_WORDS:
-                if w[0].lower() == first_letter and abs(len(w) - len(word)) <= 3:
-                    potential_matches.append(w)
-                # Para palabras cortas, ser más flexible
-                elif len(word) <= 4 and abs(len(w) - len(word)) <= 1:
-                    potential_matches.append(w)
-            
-            # Limitar a 300 candidatos para mejorar la cobertura sin sacrificar rendimiento
-            potential_matches = potential_matches[:300]
-            
-            for dict_word in potential_matches:
-                # Usar la función get_similarity mejorada
-                score = get_similarity(word_lower, dict_word.lower()) * 100  # Convertir a escala 0-100
+            # Usar FuzzyWuzzy para encontrar la mejor coincidencia en towns
+            if town_names:
+                best_town_match, best_town_score = process.extractOne(word, town_names, scorer=fuzz.ratio)
                 
-                # Umbral adaptativo basado en la longitud de la palabra
-                threshold = 80 if len(word) <= 4 else 85
-                
-                if score > threshold and score > best_score:
-                    best_score = score
-                    best_match = dict_word
+                # Solo corregir si la puntuación es lo suficientemente alta (85% o más)
+                if best_town_match and best_town_score >= 85 and best_town_match != word:
+                    similarity = round(best_town_score / 100.0, 2)
+                    corrected_words.append(best_town_match)
+                    suggestions.append({
+                        "original": original_word,
+                        "suggestion": best_town_match,
+                        "similarity": similarity,
+                        "correction_type": "town"
+                    })
+                    full_corrected_code.append(f"{original_word} -> {best_town_match} (town/city, {similarity})")
+                    continue
             
-            # Si encontramos una buena corrección con similitud > 85%
-            similarity = round(best_score / 100.0, 2)
-            if best_match and best_match.lower() != word_lower and similarity >= 0.85:
-                # Preservar capitalización original
-                if word.istitle():
-                    best_match = best_match.title()
-                elif word.isupper():
-                    best_match = best_match.upper()
+        # Usar FuzzyWuzzy para buscar coincidencias aproximadas en la tabla spellcheck
+        if len(word) >= 3:
+            # Obtener todas las palabras originales de la tabla spellcheck
+            spellcheck_words = list(custom_replacements.keys())
+            
+            # Usar FuzzyWuzzy para encontrar la mejor coincidencia en spellcheck
+            if spellcheck_words:
+                best_match, best_score = process.extractOne(word_lower, spellcheck_words, scorer=fuzz.ratio)
+                
+                # Solo corregir si la puntuación es lo suficientemente alta (85% o más)
+                if best_match and best_score >= 85 and best_match != word_lower:
+                    suggestion_text = custom_replacements[best_match]
                     
-                corrected_words.append(best_match)
-                suggestions.append({
-                    "original": original_word,
-                    "suggestion": best_match,
-                    "similarity": similarity
-                })
-                full_corrected_code.append(f"{original_word} -> {best_match}")
-                continue
-            # Si encontramos una sugerencia pero con similitud < 85%, solo sugerirla pero no aplicarla
-            elif best_match and best_match.lower() != word_lower:
-                suggestions.append({
-                    "original": original_word,
-                    "suggestion": best_match,
-                    "similarity": similarity
-                })
-                corrected_words.append(word)  # Mantener la palabra original
-                full_corrected_code.append(f"{original_word} -> {best_match} (no aplicado, similitud {similarity})")
-                continue
+                    # Preservar capitalización original
+                    if word.istitle() and not suggestion_text.startswith("I"):
+                        suggestion_text = suggestion_text.title()
+                    elif word.isupper():
+                        suggestion_text = suggestion_text.upper()
+                    
+                    # Calcular similitud normalizada (0.0 - 1.0)
+                    similarity = round(best_score / 100.0, 2)
+                    
+                    corrected_words.append(suggestion_text)
+                    suggestions.append({
+                        "original": original_word,
+                        "suggestion": suggestion_text,
+                        "similarity": similarity
+                    })
+                    full_corrected_code.append(f"{original_word} -> {suggestion_text} (spellcheck, {similarity})")
+                    continue
+        
+        # Buscar coincidencias aproximadas en la tabla towns
+        if len(word) >= 3:
+            # Obtener todas las palabras originales de la tabla towns
+            town_words = town_names
+            
+            if town_words:
+                # Usar FuzzyWuzzy para encontrar la mejor coincidencia en towns
+                best_match, best_score = process.extractOne(word_lower, town_words, scorer=fuzz.ratio)
+                
+                # Solo corregir si la puntuación es lo suficientemente alta (85% o más)
+                if best_match and best_score >= 85:
+                    suggestion_text = best_match
+                    
+                    # Preservar capitalización original
+                    if word.istitle() and not suggestion_text.startswith("I"):
+                        suggestion_text = suggestion_text.title()
+                    elif word.isupper():
+                        suggestion_text = suggestion_text.upper()
+                    
+                    # Calcular similitud normalizada (0.0 - 1.0)
+                    similarity = round(best_score / 100.0, 2)
+                    
+                    corrected_words.append(suggestion_text)
+                    suggestions.append({
+                        "original": original_word,
+                        "suggestion": suggestion_text,
+                        "similarity": similarity
+                    })
+                    full_corrected_code.append(f"{original_word} -> {suggestion_text} (towns, {similarity})")
+                    continue
         
         # Si llegamos aquí, mantener la palabra original
         corrected_words.append(word)
