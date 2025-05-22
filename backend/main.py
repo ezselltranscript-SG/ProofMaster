@@ -122,10 +122,11 @@ else:
 # Configurar CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://proofmaster-frontend.onrender.com", "http://localhost:3000"],  # Permitir el frontend en producción y desarrollo
+    allow_origins=["https://proofmaster-frontend.onrender.com", "http://localhost:3000"],
     allow_credentials=True,
-    allow_methods=["*"],  # Permitir todos los métodos
-    allow_headers=["*"],  # Permitir todos los headers
+    allow_methods=["*"],
+    allow_headers=["*"],
+    expose_headers=["*"]
 )
 
 # Configurar directorio para archivos estáticos
