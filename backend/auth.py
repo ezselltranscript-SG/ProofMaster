@@ -3,6 +3,7 @@ from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime, timedelta
+from secrets import token_urlsafe
 import jwt
 from jwt import PyJWTError
 from passlib.context import CryptContext
@@ -48,6 +49,13 @@ class Token(BaseModel):
 class TokenData(BaseModel):
     email: Optional[str] = None
 
+class PasswordResetRequest(BaseModel):
+    email: str
+
+class PasswordReset(BaseModel):
+    token: str
+    new_password: str
+
 # Funciones de utilidad
 def verify_password(plain_password, hashed_password):
     return pwd_context.verify(plain_password, hashed_password)
@@ -72,6 +80,11 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
         headers={"WWW-Authenticate": "Bearer"},
     )
     try:
+        # Verificar si el token está en la lista negra
+        response = supabase.table("invalidated_tokens").select("*").eq("token", token).execute()
+        if response.data:
+            raise credentials_exception
+
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         email: str = payload.get("sub")
         if email is None:
@@ -162,10 +175,91 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
     return {"access_token": access_token, "token_type": "bearer"}
 
 @router.post("/logout")
-async def logout(current_user: User = Depends(get_current_user)):
-    # En una implementación real, aquí podrías invalidar el token
-    # Por ahora, simplemente retornamos éxito
-    return {"message": "Successfully logged out"}
+async def logout(current_user: User = Depends(get_current_user), token: str = Depends(oauth2_scheme)):
+    try:
+        # Decodificar el token para obtener su tiempo de expiración
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        expires_at = datetime.fromtimestamp(payload.get("exp"))
+        
+        # Agregar el token a la lista negra
+        invalidated_token = {
+            "token": token,
+            "expires_at": expires_at.isoformat()
+        }
+        supabase.table("invalidated_tokens").insert(invalidated_token).execute()
+        
+        return {"message": "Successfully logged out"}
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error during logout: {str(e)}"
+        )
+
+@router.post("/forgot-password")
+async def forgot_password(request: PasswordResetRequest):
+    user = get_user_by_email(request.email)
+    if not user:
+        # Por seguridad, no revelamos si el email existe o no
+        return {"message": "If the email exists, a reset link will be sent"}
+    
+    # Generar token único
+    reset_token = token_urlsafe(32)
+    expires = datetime.utcnow() + timedelta(hours=24)
+    
+    try:
+        # Actualizar usuario con el token
+        supabase.table("users").update({
+            "reset_token": reset_token,
+            "reset_token_expires": expires.isoformat()
+        }).eq("email", request.email).execute()
+        
+        # TODO: Enviar email con el link de reset
+        # Por ahora, solo retornamos el token (en producción, esto se enviaría por email)
+        return {"reset_token": reset_token}
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error processing password reset: {str(e)}"
+        )
+
+@router.post("/reset-password")
+async def reset_password(reset: PasswordReset):
+    try:
+        # Buscar usuario con el token válido
+        response = supabase.table("users").select("*").eq("reset_token", reset.token).execute()
+        
+        if not response.data:
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid or expired reset token"
+            )
+            
+        user_data = response.data[0]
+        
+        # Verificar si el token ha expirado
+        expires = datetime.fromisoformat(user_data["reset_token_expires"])
+        if datetime.utcnow() > expires:
+            raise HTTPException(
+                status_code=400,
+                detail="Reset token has expired"
+            )
+        
+        # Actualizar contraseña y limpiar token
+        hashed_password = get_password_hash(reset.new_password)
+        supabase.table("users").update({
+            "hashed_password": hashed_password,
+            "reset_token": None,
+            "reset_token_expires": None
+        }).eq("id", user_data["id"]).execute()
+        
+        return {"message": "Password has been reset successfully"}
+    except Exception as e:
+        if isinstance(e, HTTPException):
+            raise e
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error resetting password: {str(e)}"
+        )
 
 @router.get("/me", response_model=User)
 async def read_users_me(current_user: User = Depends(get_current_user)):
