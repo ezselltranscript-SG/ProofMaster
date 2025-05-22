@@ -142,17 +142,10 @@ async def signup(user: UserCreate):
         )
 
 @router.post("/login", response_model=Token)
-async def login(form_data: OAuth2PasswordRequestForm = Depends()):
-    user = get_user_by_email(form_data.username)
-    if not user:
-        raise HTTPException(
-            status_code=401,
-            detail="Incorrect email or password",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+async def login(user_data: UserCreate):
+    # Buscar usuario por email
+    response = supabase.table("users").select("*").eq("email", user_data.email).execute()
     
-    # Obtener el hash de la contraseña
-    response = supabase.table("users").select("hashed_password").eq("email", form_data.username).execute()
     if not response.data:
         raise HTTPException(
             status_code=401,
@@ -160,8 +153,9 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
             headers={"WWW-Authenticate": "Bearer"},
         )
     
+    # Obtener el hash de la contraseña
     hashed_password = response.data[0]["hashed_password"]
-    if not verify_password(form_data.password, hashed_password):
+    if not verify_password(user_data.password, hashed_password):
         raise HTTPException(
             status_code=401,
             detail="Incorrect email or password",
