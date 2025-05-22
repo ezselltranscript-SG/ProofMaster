@@ -15,7 +15,7 @@ from dotenv import load_dotenv
 import pathlib
 import logging
 from auth import router as auth_router, User, get_current_user
-from typing import Optional, get_current_user, User
+from typing import Optional
 
 # Configurar logging
 logging.basicConfig(level=logging.INFO)
