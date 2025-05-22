@@ -3,16 +3,19 @@ import re
 import nltk
 from fuzzywuzzy import fuzz
 from fuzzywuzzy import process
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
+from fastapi.security import OAuth2PasswordBearer
 from pydantic import BaseModel
 from typing import List, Dict, Set
 from supabase import create_client, Client
 from dotenv import load_dotenv
 import pathlib
 import logging
+from auth import router as auth_router, User, get_current_user
+from typing import Optional, get_current_user, User
 
 # Configurar logging
 logging.basicConfig(level=logging.INFO)
@@ -105,6 +108,16 @@ app = FastAPI(
     description="API para la aplicación de corrección ortográfica ProofMaster",
     version="1.0.0"
 )
+
+# Feature flag para autenticación
+AUTH_ENABLED = os.getenv("AUTH_ENABLED", "false").lower() == "true"
+
+# Incluir las rutas de autenticación solo si está habilitado
+if AUTH_ENABLED:
+    app.include_router(auth_router, prefix="/auth", tags=["authentication"])
+    logger.info("Autenticación habilitada")
+else:
+    logger.info("Autenticación deshabilitada")
 
 # Configurar CORS
 app.add_middleware(
@@ -267,9 +280,18 @@ async def read_root():
 def redirect_to_docs():
     return RedirectResponse(url="/docs")
 
+# Middleware de autenticación condicional
+def conditional_auth(current_user: User = Depends(get_current_user)):
+    if AUTH_ENABLED:
+        return current_user
+    return None
+
 # Endpoint principal
 @app.post("/spellcheck", response_model=SpellCheckResponse)
-def spellcheck(request: SpellCheckRequest):
+async def spellcheck(
+    request: SpellCheckRequest,
+    user: Optional[User] = Depends(conditional_auth)
+):
     text = request.text
     suggestions = []
 
